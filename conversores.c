@@ -196,7 +196,7 @@ static void gpio_button_b_handler(uint gpio, uint32_t events) {
 }
 
 
-// Tratador do botão do joystick (entra em modo bootloader USB)
+// Tratador do botão do joystick
 static void gpio_button_joystick_handler(uint gpio, uint32_t events) {
     
     uint32_t current_time = to_us_since_boot(get_absolute_time());
