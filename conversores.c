@@ -17,8 +17,8 @@
 #define BUTTON_JOYSTICK 22
 
 //Definição das variaveis do joystick
-#define VRX_PIN 26  
-#define VRY_PIN 27
+#define VRX_PIN 27  
+#define VRY_PIN 26
 #define ADC_MAX 4095
 #define CENTRO 2047
 #define DEADZONE 250  // Zona morta de 200 ao redor do centro (2047)
@@ -57,6 +57,7 @@ uint slice_red;            // Variável para o "slice" do PWM do LED vermelho
 uint slice_blue;           // Variável para o "slice" do PWM do LED azul
 bool pwm_enabled = true;   // Flag que indica se o PWM está habilitado
 bool rotina_desativacao = false; // Flag para controlar a desativação do PWM
+bool rotina_ativacao = false; // Flag para controlar a ativação do PWM
 
 void atualiza_display();
 void desenha_quadrado();
@@ -71,11 +72,11 @@ int main()
 
     while (true)  while (true) {
         // Leitura dos valores dos eixos do joystick
-        adc_select_input(0); // Seleciona o canal para o eixo X
+        adc_select_input(1); // Seleciona o canal para o eixo X
         vrx_valor = adc_read();
         vrx_valor = aplicar_deadzone(vrx_valor);  // Aplica deadzone no eixo X
 
-        adc_select_input(1); // Seleciona o canal para o eixo Y
+        adc_select_input(0); // Seleciona o canal para o eixo Y
         vry_valor = adc_read();
         vry_valor = aplicar_deadzone(vry_valor);  // Aplica deadzone no eixo Y
 
@@ -83,13 +84,37 @@ int main()
 
         // Controle da potência dos LEDs RGB com PWM
         if(pwm_enabled){
+            if(rotina_ativacao){
+                rotina_ativacao = false;
+                // Reconfigura pinos para PWM
+                gpio_set_function(RED_PIN, GPIO_FUNC_PWM);
+                gpio_set_function(BLUE_PIN, GPIO_FUNC_PWM);
+        
+                // Reativa slices PWM
+                pwm_set_enabled(slice_red, true);
+                pwm_set_enabled(slice_blue, true);
+            }
+
             pwm_set_gpio_level(RED_PIN, abs(vrx_valor - 2047));  // Ajusta a intensidade(Duty Cicle) do LED vermelho com base no valor do eixo X
             pwm_set_gpio_level(BLUE_PIN, abs(vry_valor - 2047)); // Ajusta a intensidade(Duty Cicle) do LED azul com base no valor do eixo Y
         }
         else if(!pwm_enabled && rotina_desativacao == true){
-            rotina_desativacao = false;  // Desativa a rotina de desativação
-            pwm_set_gpio_level(RED_PIN, 0);  // Desliga o LED vermelho
-            pwm_set_gpio_level(BLUE_PIN, 0); // Desliga o LED azul
+            rotina_desativacao = false;
+            pwm_set_gpio_level(RED_PIN, 0);
+            pwm_set_gpio_level(BLUE_PIN, 0);
+        
+            // Desativa os slices PWM
+            pwm_set_enabled(slice_red, false);
+            pwm_set_enabled(slice_blue, false);
+        
+            // Reconfigura os pinos como saída padrão e define como LOW
+            gpio_set_function(RED_PIN, GPIO_FUNC_SIO);
+            gpio_set_dir(RED_PIN, GPIO_OUT);
+            gpio_put(RED_PIN, 0);
+        
+            gpio_set_function(BLUE_PIN, GPIO_FUNC_SIO);
+            gpio_set_dir(BLUE_PIN, GPIO_OUT);
+            gpio_put(BLUE_PIN, 0);
         }
 
         atualiza_display();
@@ -112,19 +137,17 @@ uint pwm_setup(uint pin) {
 
 void desenha_quadrado(){
 
-    uint pos_x = (vry_valor/4095.0) * 64;
-    uint pos_y = (vrx_valor/4095.0) * 68;
+    uint pos_x = (vrx_valor/4095.0) * 44;
+    uint pos_y = (vry_valor/4095.0) * 44;
 
-    // Ajusta as bordas do quadrado para garantir que ele não ultrapasse os limites
-    if(pos_x >= 64 - 8) pos_x = 64 - 8;
-    else if(pos_x < 8) pos_x = 8;
+    // Ajusta as posições para centralização
 
-    pos_y = abs(64 - pos_y); // Inverte eixo Y
+    pos_y = abs(44 - pos_y); // Inverte eixo Y
+    pos_y += 8;
+    pos_x += 43; // Centraliza o eixo x do quadrado
 
-    if(pos_y > 60 - 8) pos_y = 52;
-    else if(pos_y < 8) pos_y = 8;
+    //printf("PosX: %d   /  PosY: %d\n", pos_x, pos_y);
 
-    pos_x += 31; // Centraliza o eixo x do quadrado
 
     // Desenha o quadrado de 8x8 pixels na nova posição
     ssd1306_rect(&ssd, pos_y, pos_x, 8, 8, true, true);  // Quadrado com preenchimento
@@ -175,10 +198,9 @@ static void gpio_button_a_handler(uint gpio, uint32_t events) {
 
         //Alterna a flag para alterar os estados do pwm
         pwm_enabled = !pwm_enabled;
-        rotina_desativacao = true;
+        if(pwm_enabled) rotina_ativacao = true;
+        else rotina_desativacao = true;
 
-        //Altera a borda
-        borda = (borda+1) % 2;
     }
 }
 
@@ -205,7 +227,11 @@ static void gpio_button_joystick_handler(uint gpio, uint32_t events) {
     if (current_time - last_time_button_joystick > 200000) {
         last_time_button_joystick = current_time;
 
+        //Muda estado do led verde
         gpio_put(GREEN_PIN, !gpio_get(GREEN_PIN));
+
+        //Altera a borda
+        borda = (borda+1) % 2;
         
     }
 }
